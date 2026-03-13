@@ -2,12 +2,19 @@ package pt.isel.vulnerableapp.controller;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import io.javalin.http.Context;
 
 /**
  * VULNERABILIDADE: CWE-89 - SQL Injection
@@ -96,6 +103,42 @@ public class UserController {
             
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * VULNERÁVEL: CWE-22 - Path Traversal via Zip Slip
+     *
+     * Extrai ficheiros de um ZIP sem validar os caminhos das entradas,
+     * permitindo escrita arbitrária de ficheiros fora do diretório destino.
+     *
+     * Payload de ataque: entrada ZIP com nome "../../etc/cron.d/backdoor"
+     */
+    public void addProfilePicture(Context ctx) {
+        String userId = ctx.pathParam("userId");
+        String destinationDir = "/app/profiles/" + userId;
+
+        try {
+            InputStream zipInput = ctx.uploadedFile("profileZip").content();
+            ZipInputStream zis = new ZipInputStream(zipInput);
+            ZipEntry entry;
+
+            while ((entry = zis.getNextEntry()) != null) {
+                // ❌ VULNERABILIDADE: Usa diretamente entry.getName() SEM validação
+                File profilePic = new File(destinationDir, entry.getName());
+
+                // Cria diretórios parent sem validação
+                profilePic.getParentFile().mkdirs();
+
+                // Extrai o ficheiro sem validar o path
+                Files.copy(zis, profilePic.toPath(),
+                          StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            zis.close();
+            ctx.status(200).json("Profile pictures uploaded successfully");
+        } catch (Exception e) {
+            ctx.status(500).result("Error uploading profile pictures: " + e.getMessage());
         }
     }
 }
